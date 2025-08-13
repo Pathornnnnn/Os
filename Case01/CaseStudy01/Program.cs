@@ -1,23 +1,27 @@
-﻿using System;
+﻿// Case Study 01 - Multithreading (Fixed for Reproducible Results)
+using System;
 using System.IO;
 using System.Threading;
 using System.Diagnostics;
 using CalculatingFunctions;
-//400 ms result +- 27 
+//8000 ms +- 0.01
 class Program
 {
     static decimal[] data = new decimal[11000001];
-    static decimal finalResult = 0;
+    static decimal finalResult = 0; // ใช้รวมผลหลังจบทุก thread
 
-    private static decimal ProcessChunk(int startIndex, int endIndex)
+    private static decimal ThreadWork(int startLoop, int endLoop)
     {
         CalClass CF = new CalClass();
-        decimal localResult = 0;
-        int idx = startIndex;
+        decimal localResult = 0; // เก็บผลเฉพาะ thread นี้
 
-        while (idx < endIndex)
+        for (int i = startLoop; i < endLoop; i++)
         {
-            localResult += CF.Calculate1(ref data, ref idx);
+            int localIndex = 0;
+            while (localIndex < 10000000)
+            {
+                localResult += CF.Calculate1(ref data, ref localIndex);
+            }
         }
 
         return localResult;
@@ -44,20 +48,19 @@ class Program
         Console.WriteLine("Calculation start...");
 
         decimal result1 = 0, result2 = 0;
-        int mid = data.Length / 2;
 
         Stopwatch sw = new Stopwatch();
         sw.Start();
 
-        Thread t1 = new Thread(() => { result1 = ProcessChunk(0, mid); });
-        Thread t2 = new Thread(() => { result2 = ProcessChunk(mid, data.Length); });
+        Thread Th1 = new Thread(() => { result1 = ThreadWork(0, 15); });
+        Thread Th2 = new Thread(() => { result2 = ThreadWork(16, 30); });
 
-        t1.Start();
-        t2.Start();
-        t1.Join();
-        t2.Join();
+        Th1.Start();
+        Th2.Start();
+        Th1.Join();
+        Th2.Join();
 
-        finalResult = result1 + result2;
+        finalResult = result1 + result2; // รวมผล
 
         sw.Stop();
         Console.WriteLine($"Calculation finished in {sw.ElapsedMilliseconds} ms. Result: {finalResult:F25}");
