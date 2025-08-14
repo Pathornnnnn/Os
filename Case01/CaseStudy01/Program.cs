@@ -1,68 +1,89 @@
-﻿// Case Study 01 - Multithreading (Fixed for Reproducible Results)
-using System;
+﻿using System;
 using System.IO;
+using CalculatingFunctions;
 using System.Threading;
 using System.Diagnostics;
-using CalculatingFunctions;
-//8000 ms +- 0.01
+
 class Program
 {
     static decimal[] data = new decimal[11000001];
-    static decimal finalResult = 0; // ใช้รวมผลหลังจบทุก thread
+    static readonly int NumThreads = Environment.ProcessorCount; // 8 cores for M3
+    static decimal[] threadResults = new decimal[NumThreads]; // Each thread gets its own result slot
 
-    private static decimal ThreadWork(int startLoop, int endLoop)
+    private static void ThreadWork(object threadIdObj)
     {
+        int threadId = (int)threadIdObj;
         CalClass CF = new CalClass();
-        decimal localResult = 0; // เก็บผลเฉพาะ thread นี้
-
-        for (int i = startLoop; i < endLoop; i++)
+        decimal localResult = 0; // Local result for this thread
+        int localIndex = 0; // Local index for this thread
+        
+        // Each thread processes a portion of the data to avoid race conditions
+        int totalElements = 10000000;
+        int elementsPerThread = totalElements / NumThreads;
+        int startIndex = threadId * elementsPerThread;
+        int endIndex = (threadId == NumThreads - 1) ? totalElements : startIndex + elementsPerThread;
+        
+        int i = 0;
+        while (i < 30)
         {
-            int localIndex = 0;
-            while (localIndex < 10000000)
+            localIndex = startIndex; // Start from this thread's portion
+            while (localIndex < endIndex) // Process only this thread's portion
             {
                 localResult += CF.Calculate1(ref data, ref localIndex);
             }
+            i++;
         }
-
-        return localResult;
+        
+        // Store result in thread-safe manner (each thread has its own index)
+        threadResults[threadId] = localResult;
     }
 
     private static void LoadData()
     {
         Console.WriteLine("Loading data...");
-        using (FileStream fs = new FileStream("data.bin", FileMode.Open))
-        using (BinaryReader br = new BinaryReader(fs))
+        FileStream fs = new FileStream("data.bin", FileMode.Open);
+        BinaryReader br = new BinaryReader(fs);
+        for (int i = 0; i < data.Length; i++)
         {
-            for (int i = 0; i < data.Length; i++)
-            {
-                Single f = br.ReadSingle();
-                data[i] = (decimal)(f * 36);
-            }
+            Single f = br.ReadSingle();
+            data[i] = (decimal)(f * 36);
         }
-        Console.WriteLine("Data loaded successfully.\n");
+        br.Close();
+        fs.Close();
+        Console.WriteLine("Data loaded successfully.\n\n");
     }
 
     private static void Main(string[] args)
     {
         LoadData();
-        Console.WriteLine("Calculation start...");
+        Console.WriteLine($"Calculation start with {NumThreads} threads optimized for M3...");
 
-        decimal result1 = 0, result2 = 0;
+        Thread[] threads = new Thread[NumThreads];
+        Stopwatch _st = new Stopwatch();
+        _st.Start();
 
-        Stopwatch sw = new Stopwatch();
-        sw.Start();
+        // Create and start all threads
+        for (int i = 0; i < NumThreads; i++)
+        {
+            threads[i] = new Thread(ThreadWork);
+            threads[i].Start(i); // Pass thread ID as parameter
+        }
 
-        Thread Th1 = new Thread(() => { result1 = ThreadWork(0, 15); });
-        Thread Th2 = new Thread(() => { result2 = ThreadWork(16, 30); });
+        // Wait for all threads to finish
+        for (int i = 0; i < NumThreads; i++)
+        {
+            threads[i].Join();
+        }
 
-        Th1.Start();
-        Th2.Start();
-        Th1.Join();
-        Th2.Join();
+        // Combine results from all threads
+        decimal finalResult = 0;
+        for (int i = 0; i < NumThreads; i++)
+        {
+            finalResult += threadResults[i];
+        }
 
-        finalResult = result1 + result2; // รวมผล
-
-        sw.Stop();
-        Console.WriteLine($"Calculation finished in {sw.ElapsedMilliseconds} ms. Result: {finalResult:F25}");
+        _st.Stop();
+        Console.WriteLine($"Calculation finished in {_st.ElapsedMilliseconds} ms. Result: {finalResult.ToString("F25")}");
+        Console.WriteLine($"Performance optimized for M3 with {NumThreads} threads");
     }
 }
